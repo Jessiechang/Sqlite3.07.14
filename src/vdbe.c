@@ -5988,6 +5988,1648 @@ case OP_JournalMode: {    /* out2-prerelease */
   /* Do not allow a transition to journal_mode=WAL for a database
   ** in temporary storage or if the VFS does not support shared memory 
   */
+  
+eOld = sqlite3PagerGetJournalMode(pPager);
+  if( eNew==PAGER_JOURNALMODE_QUERY ) eNew = eOld;
+  if( !sqlite3PagerOkToChangeJournalMode(pPager) ) eNew = eOld;
+
+#ifndef SQLITE_OMIT_WAL
+  zFilename = sqlite3PagerFilename(pPager, 1);
+
+  /* Do not allow a transition to journal_mode=WAL for a database
+  ** in temporary storage or if the VFS does not support shared memory 
+  不允许一个过渡journal_mode = WAL数据库
+* *在临时存储或者VFS不支持共享内存
+  */
+  
+eOld = sqlite3PagerGetJournalMode(pPager);
+  if( eNew==PAGER_JOURNALMODE_QUERY ) eNew = eOld;
+  if( !sqlite3PagerOkToChangeJournalMode(pPager) ) eNew = eOld;
+
+#ifndef SQLITE_OMIT_WAL
+  zFilename = sqlite3PagerFilename(pPager, 1);
+
+  /* Do not allow a transition to journal_mode=WAL for a database
+  ** in temporary storage or if the VFS does not support shared memory 
+  不允许一个过渡journal_mode = WAL数据库
+* *在临时存储或者VFS不支持共享内存
+  */
+  if( eNew==PAGER_JOURNALMODE_WAL
+   && (sqlite3Strlen30(zFilename)==0           /* Temp file */
+       || !sqlite3PagerWalSupported(pPager))   /* No shared-memory support */
+  ){
+    eNew = eOld;
+  }
+
+  if( (eNew!=eOld)
+   && (eOld==PAGER_JOURNALMODE_WAL || eNew==PAGER_JOURNALMODE_WAL)
+  ){
+    if( !db->autoCommit || db->activeVdbeCnt>1 ){
+      rc = SQLITE_ERROR;
+      sqlite3SetString(&p->zErrMsg, db, 
+          "cannot change %s wal mode from within a transaction",
+          (eNew==PAGER_JOURNALMODE_WAL ? "into" : "out of")
+      );
+      break;
+    }else{
+ 
+      if( eOld==PAGER_JOURNALMODE_WAL ){
+        /* If leaving WAL mode, close the log file. If successful, the call
+        ** to PagerCloseWal() checkpoints and deletes the write-ahead-log 
+        ** file. An EXCLUSIVE lock may still be held on the database file 
+        ** after a successful return. 
+		如果离开WAL模式,关闭日志文件。如果成功,调用
+* * PagerCloseWal()write-ahead-log检查点和删除
+* *文件。独占锁可能仍在数据库文件中
+* *成功后返回。
+        */
+        rc = sqlite3PagerCloseWal(pPager);
+        if( rc==SQLITE_OK ){
+          sqlite3PagerSetJournalMode(pPager, eNew);
+        }
+      }else if( eOld==PAGER_JOURNALMODE_MEMORY ){
+        /* Cannot transition directly from MEMORY to WAL.  Use mode OFF
+        ** as an intermediate
+		不能直接从Memory模式过渡到WAL模式。使用模式OFF
+* *作为中间
+		*/
+        sqlite3PagerSetJournalMode(pPager, PAGER_JOURNALMODE_OFF);
+      }
+  
+      /* Open a transaction on the database file. Regardless of the journal
+      ** mode, this transaction always uses a rollback journal.
+	  打开事务在数据库文件。无论日志模式,这个事务总是使用一个回滚日志。
+      */
+      assert( sqlite3BtreeIsInTrans(pBt)==0 );
+      if( rc==SQLITE_OK ){
+        rc = sqlite3BtreeSetVersion(pBt, (eNew==PAGER_JOURNALMODE_WAL ? 2 : 1));
+      }
+    }
+  }
+#endif /* ifndef SQLITE_OMIT_WAL */
+
+  if( rc ){
+    eNew = eOld;
+  }
+  eNew = sqlite3PagerSetJournalMode(pPager, eNew);
+
+  pOut = &aMem[pOp->p2];
+  pOut->flags = MEM_Str|MEM_Static|MEM_Term;
+  pOut->z = (char *)sqlite3JournalModename(eNew);
+  pOut->n = sqlite3Strlen30(pOut->z);
+  pOut->enc = SQLITE_UTF8;
+  sqlite3VdbeChangeEncoding(pOut, encoding);
+  break;
+};
+#endif /* SQLITE_OMIT_PRAGMA */
+
+#if !defined(SQLITE_OMIT_VACUUM) && !defined(SQLITE_OMIT_ATTACH)
+/* Opcode: Vacuum * * * * *
+**
+** Vacuum the entire database.  This opcode will cause other virtual
+** machines to be created and run.  It may not be called from within
+** a transaction.
+真空整个数据库。这个操作码会导致其他虚拟机器创建和运行。它可能不是从内部一个事务。
+*/
+case OP_Vacuum: {
+  rc = sqlite3RunVacuum(&p->zErrMsg, db);
+  break;
+}
+#endif
+
+#if !defined(SQLITE_OMIT_AUTOVACUUM)
+/* Opcode: IncrVacuum P1 P2 * * *
+**
+** Perform a single step of the incremental vacuum procedure on
+** the P1 database. If the vacuum has finished, jump to instruction
+** P2. Otherwise, fall through to the next instruction.
+执行增量真空过程的一个步骤P1数据库。如果真空完成后,跳转到指令 P2。否则,下降到下一个指令。
+*/
+case OP_IncrVacuum: {        /* jump */
+  Btree *pBt;
+
+  assert( pOp->p1>=0 && pOp->p1<db->nDb );
+  assert( (p->btreeMask & (((yDbMask)1)<<pOp->p1))!=0 );
+  pBt = db->aDb[pOp->p1].pBt;
+  rc = sqlite3BtreeIncrVacuum(pBt);
+  if( rc==SQLITE_DONE ){
+    pc = pOp->p2 - 1;
+    rc = SQLITE_OK;
+  }
+  break;
+}
+#endif
+
+/* Opcode: Expire P1 * * * *
+**
+** Cause precompiled statements to become expired. An expired statement
+** fails with an error code of SQLITE_SCHEMA if it is ever executed 
+** (via sqlite3_step()).
+导致预编译语句变得过期了。一个过期的语句
+* *失败的错误代码SQLITE_SCHEMA如果它执行
+* *(通过sqlite3_step())。
+
+** 
+** If P1 is 0, then all SQL statements become expired. If P1 is non-zero,
+** then only the currently executing statement is affected. 
+如果P1为0,那么所有SQL语句变得过期。如果非零P1,
+* *然后只影响当前执行语句。
+
+*/
+case OP_Expire: {
+  if( !pOp->p1 ){
+    sqlite3ExpirePreparedStatements(db);
+  }else{
+    p->expired = 1;
+  }
+  break;
+}
+
+#ifndef SQLITE_OMIT_SHARED_CACHE
+/* Opcode: TableLock P1 P2 P3 P4 *
+**
+** Obtain a lock on a particular table. This instruction is only used when
+** the shared-cache feature is enabled. 
+**获得一个锁在一个特定的表。这个指令时才使用
+* *启用共享缓存特性。
+
+** P1 is the index of the database in sqlite3.aDb[] of the database
+** on which the lock is acquired.  A readlock is obtained if P3==0 or
+** a write lock if P3==1.
+**P1的索引数据库sqlite3。亚洲开发银行数据库的[]
+加了锁的* *。一个readlock如果P3 = = 0或获得
+* *一个写锁如果P3 = = 1。
+
+** P2 contains the root-page of the table to lock.
+P2包含锁表的根页。
+**
+** P4 contains a pointer to the name of the table being locked. This is only
+** used to generate an error message if the lock cannot be obtained.
+* * P4包含一个指针表被锁的名称。这只是
+* *用于生成一个错误消息,如果不能获得锁。
+*/
+case OP_TableLock: {
+  u8 isWriteLock = (u8)pOp->p3;
+  if( isWriteLock || 0==(db->flags&SQLITE_ReadUncommitted) ){
+    int p1 = pOp->p1; 
+    assert( p1>=0 && p1<db->nDb );
+    assert( (p->btreeMask & (((yDbMask)1)<<p1))!=0 );
+    assert( isWriteLock==0 || isWriteLock==1 );
+    rc = sqlite3BtreeLockTable(db->aDb[p1].pBt, pOp->p2, isWriteLock);
+    if( (rc&0xFF)==SQLITE_LOCKED ){
+      const char *z = pOp->p4.z;
+      sqlite3SetString(&p->zErrMsg, db, "database table is locked: %s", z);
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_SHARED_CACHE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VBegin * * * P4 *
+**
+** P4 may be a pointer to an sqlite3_vtab structure. If so, call the 
+** xBegin method for that table.
+**
+** Also, whether or not P4 is set, check that this is not being called from
+** within a callback to a virtual table xSync() method. If it is, the error
+** code will be set to SQLITE_LOCKED.
+寄存器P4对 sqlite3_vtab结构可能是一个指针。 如果是这样,对那张表调用xBegin方法。
+* *
+* *另外,P4是否设置,检查这不是被称为
+* *在一个回调到一个虚拟表xSync()方法。如果是,这个错误
+代码将被设置为SQLITE_LOCKED * *。
+*/
+case OP_VBegin: {
+  VTable *pVTab;
+  pVTab = pOp->p4.pVtab;
+  rc = sqlite3VtabBegin(db, pVTab);
+  if( pVTab ) importVtabErrMsg(p, pVTab->pVtab);
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VCreate P1 * * P4 *
+**
+** P4 is the name of a virtual table in database P1. Call the xCreate method
+** for that table.P4的名称是一个虚拟表在数据库P1。调用xCreate方法表
+*/
+case OP_VCreate: {
+  rc = sqlite3VtabCallCreate(db, pOp->p1, pOp->p4.z, &p->zErrMsg);
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VDestroy P1 * * P4 *
+**
+** P4 is the name of a virtual table in database P1.  Call the xDestroy method
+** of that table.
+    P4是在数据库P1中的一个虚拟表的名字。调用那个表的xDestroy方法
+*/
+case OP_VDestroy: {
+  p->inVtabMethod = 2;
+  rc = sqlite3VtabCallDestroy(db, pOp->p1, pOp->p4.z);
+  p->inVtabMethod = 0;
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VOpen P1 * * P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** P1 is a cursor number.  This opcode opens a cursor to the virtual
+** table and stores that cursor in P1.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* * P1是游标的数字。这个操作码打开虚拟光标
+* *表和商店,光标在P1。
+*/
+case OP_VOpen: {
+  VdbeCursor *pCur;
+  sqlite3_vtab_cursor *pVtabCursor;
+  sqlite3_vtab *pVtab;
+  sqlite3_module *pModule;
+
+  pCur = 0;
+  pVtabCursor = 0;
+  pVtab = pOp->p4.pVtab->pVtab;
+  pModule = (sqlite3_module *)pVtab->pModule;
+  assert(pVtab && pModule);
+  rc = pModule->xOpen(pVtab, &pVtabCursor);
+  importVtabErrMsg(p, pVtab);
+  if( SQLITE_OK==rc ){
+    /* Initialize sqlite3_vtab_cursor base class */
+    pVtabCursor->pVtab = pVtab;
+
+    /* Initialise vdbe cursor object */
+    pCur = allocateCursor(p, pOp->p1, 0, -1, 0);
+    if( pCur ){
+      pCur->pVtabCursor = pVtabCursor;
+      pCur->pModule = pVtabCursor->pVtab->pModule;
+    }else{
+      db->mallocFailed = 1;
+      pModule->xClose(pVtabCursor);
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VFilter P1 P2 P3 P4 *
+**
+** P1 is a cursor opened using VOpen.  P2 is an address to jump to if
+** the filtered result set is empty.
+**P1是使用VOpen打开游标。P2是跳转到一个地址
+* *过滤结果集是空的。
+
+** P4 is either NULL or a string that was generated by the xBestIndex
+** method of the module.  The interpretation of the P4 string is left
+** to the module implementation.
+P4 NULL或一个字符串,该字符串是由xBestIndex生成
+* *模块的方法。P4的解释字符串是离开了
+* *模块实现。
+**
+** This opcode invokes the xFilter method on the virtual table specified
+** by P1.  The integer query plan parameter to xFilter is stored in register
+** P3. Register P3+1 stores the argc parameter to be passed to the
+** xFilter method. Registers P3+2..P3+1+argc are the argc
+** additional parameters which are passed to
+** xFilter as argv. Register P3+2 becomes argv[0] when passed to xFilter.
+
+**这个操作码调用xFilter方法指定的虚拟表
+* * P1。整数xFilter查询计划参数存储在寄存器中
+* * P3。注册P3 + 1存储命令行参数个数参数被传递到
+* * xFilter方法。寄存器P3 + 2 . .命令行参数个数P3 + 1 +命令行参数个数
+* *额外的参数传递给
+* * xFilter argv。 注册P3 + 2时传递给xFilter成了argv[0]。
+* *
+
+** A jump is made to P2 if the result set after filtering would be empty.
+
+* *跳转了P2如果过滤后的结果集将是空的。
+*/
+case OP_VFilter: {   /* jump */
+  int nArg;
+  int iQuery;
+  const sqlite3_module *pModule;
+  Mem *pQuery;
+  Mem *pArgc;
+  sqlite3_vtab_cursor *pVtabCursor;
+  sqlite3_vtab *pVtab;
+  VdbeCursor *pCur;
+  int res;
+  int i;
+  Mem **apArg;
+
+  pQuery = &aMem[pOp->p3];
+  pArgc = &pQuery[1];
+  pCur = p->apCsr[pOp->p1];
+  assert( memIsValid(pQuery) );
+  REGISTER_TRACE(pOp->p3, pQuery);
+  assert( pCur->pVtabCursor );
+  pVtabCursor = pCur->pVtabCursor;
+  pVtab = pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+
+  /* Grab the index number and argc parameters */
+  assert( (pQuery->flags&MEM_Int)!=0 && pArgc->flags==MEM_Int );
+  nArg = (int)pArgc->u.i;
+  iQuery = (int)pQuery->u.i;
+
+  /* Invoke the xFilter method */
+  {
+    res = 0;
+    apArg = p->apArg;
+    for(i = 0; i<nArg; i++){
+      apArg[i] = &pArgc[i+1];
+      sqlite3VdbeMemStoreType(apArg[i]);
+    }
+
+    p->inVtabMethod = 1;
+    rc = pModule->xFilter(pVtabCursor, iQuery, pOp->p4.z, nArg, apArg);
+    p->inVtabMethod = 0;
+    importVtabErrMsg(p, pVtab);
+    if( rc==SQLITE_OK ){
+      res = pModule->xEof(pVtabCursor);
+    }
+
+    if( res ){
+      pc = pOp->p2 - 1;
+    }
+  }
+  pCur->nullRow = 0;
+
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VColumn P1 P2 P3 * *
+**
+** Store the value of the P2-th column of
+** the row of the virtual-table that the 
+** P1 cursor is pointing to into register P3.
+存储P2-th列的值
+* *的虚拟表的行
+* * P1游标指向到寄存器P3。
+*/
+case OP_VColumn: {
+  sqlite3_vtab *pVtab;
+  const sqlite3_module *pModule;
+  Mem *pDest;
+  sqlite3_context sContext;
+
+  VdbeCursor *pCur = p->apCsr[pOp->p1];
+  assert( pCur->pVtabCursor );
+  assert( pOp->p3>0 && pOp->p3<=p->nMem );
+  pDest = &aMem[pOp->p3];
+  memAboutToChange(p, pDest);
+  if( pCur->nullRow ){
+    sqlite3VdbeMemSetNull(pDest);
+    break;
+  }
+  pVtab = pCur->pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+  assert( pModule->xColumn );
+  memset(&sContext, 0, sizeof(sContext));
+
+  /* The output cell may already have a buffer allocated. Move
+  ** the current contents to sContext.s so in case the user-function 
+  ** can use the already allocated buffer instead of allocating a 
+  ** new one.
+  细胞可能已经分配一个缓冲的输出。移动
+* * sContext的当前内容。所以,以防用户函数
+* *可以使用已分配的缓冲区,而不是分配
+* *新的。
+  */
+  sqlite3VdbeMemMove(&sContext.s, pDest);
+  MemSetTypeFlag(&sContext.s, MEM_Null);
+
+  rc = pModule->xColumn(pCur->pVtabCursor, &sContext, pOp->p2);
+  importVtabErrMsg(p, pVtab);
+  if( sContext.isError ){
+    rc = sContext.isError;
+  }
+
+  /* Copy the result of the function to the P3 register. We
+  ** do this regardless of whether or not an error occurred to ensure any
+  ** dynamic allocation in sContext.s (a Mem struct) is  released.
+  函数的结果复制到P3登记。我们
+* *这样做无论是否发生错误,以确保任何
+* *在sContext动态分配。年代(Mem结构)。
+  */
+  sqlite3VdbeChangeEncoding(&sContext.s, encoding);
+  sqlite3VdbeMemMove(pDest, &sContext.s);
+  REGISTER_TRACE(pOp->p3, pDest);
+  UPDATE_MAX_BLOBSIZE(pDest);
+
+  if( sqlite3VdbeMemTooBig(pDest) ){
+    goto too_big;
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VNext P1 P2 * * *
+**
+** Advance virtual table P1 to the next row in its result set and
+** jump to instruction P2.  Or, if the virtual table has reached
+** the end of its result set, then fall through to the next instruction.
+推进虚拟表P1在结果集和下一行
+* *跳转指令P2。或者,如果已经达到虚拟表
+* *的结果集,然后下降到下一个指令。
+*/
+case OP_VNext: {   /* jump */
+  sqlite3_vtab *pVtab;
+  const sqlite3_module *pModule;
+  int res;
+  VdbeCursor *pCur;
+
+  res = 0;
+  pCur = p->apCsr[pOp->p1];
+  assert( pCur->pVtabCursor );
+  if( pCur->nullRow ){
+    break;
+  }
+  pVtab = pCur->pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+  assert( pModule->xNext );
+
+  /* Invoke the xNext() method of the module. There is no way for the
+  ** underlying implementation to return an error if one occurs during
+  ** xNext(). Instead, if an error occurs, true is returned (indicating that 
+  ** data is available) and the error code returned when xColumn or
+  ** some other method is next invoked on the save virtual table cursor.
+  模块的调用xNext()方法。没有办法的
+* *底层实现返回一个错误,如果期间出现
+* * xNext()。相反,如果真的发生错误,返回(表明
+* *数据可用),当xColumn或返回的错误代码
+* *下一个调用其他方法保存虚拟表游标。
+  */
+  p->inVtabMethod = 1;
+  rc = pModule->xNext(pCur->pVtabCursor);
+  p->inVtabMethod = 0;
+  importVtabErrMsg(p, pVtab);
+  if( rc==SQLITE_OK ){
+    res = pModule->xEof(pCur->pVtabCursor);
+  }
+
+  if( !res ){
+    /* If there is data, jump to P2 */
+    pc = pOp->p2 - 1;
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VRename P1 * * P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** This opcode invokes the corresponding xRename method. The value
+** in register P1 is passed as the zName argument to the xRename method.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* *此操作码调用相应的xRename方法。的价值
+* *在P1通过注册为xRename zName参数的方法。
+*/
+case OP_VRename: {
+  sqlite3_vtab *pVtab;
+  Mem *pName;
+
+  pVtab = pOp->p4.pVtab->pVtab;
+  pName = &aMem[pOp->p1];
+  assert( pVtab->pModule->xRename );
+  assert( memIsValid(pName) );
+  REGISTER_TRACE(pOp->p1, pName);
+  assert( pName->flags & MEM_Str );
+  testcase( pName->enc==SQLITE_UTF8 );
+  testcase( pName->enc==SQLITE_UTF16BE );
+  testcase( pName->enc==SQLITE_UTF16LE );
+  rc = sqlite3VdbeChangeEncoding(pName, SQLITE_UTF8);
+  if( rc==SQLITE_OK ){
+    rc = pVtab->pModule->xRename(pVtab, pName->z);
+    importVtabErrMsg(p, pVtab);
+    p->expired = 0;
+  }
+  break;
+}
+#endif
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VUpdate P1 P2 P3 P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** This opcode invokes the corresponding xUpdate method. P2 values
+** are contiguous memory cells starting at P3 to pass to the xUpdate 
+** invocation. The value in register (P3+P2-1) corresponds to the 
+** p2th element of the argv array passed to xUpdate.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* *此操作码调用相应的xUpdate方法。P2值
+* *是连续的记忆细胞从xUpdate P3通过
+* *调用。寄存器中的值(P3 + P2-1)对应
+* * p2th argv数组的元素传递给xUpdate。
+
+**
+** The xUpdate method will do a DELETE or an INSERT or both.
+** The argv[0] element (which corresponds to memory cell P3)
+** is the rowid of a row to delete.  If argv[0] is NULL then no 
+** deletion occurs.  The argv[1] element is the rowid of the new 
+** row.  This can be NULL to have the virtual table select the new 
+** rowid for itself.  The subsequent elements in the array are 
+** the values of columns in the new row.
+xUpdate方法将删除或插入或两者兼而有之。
+* * argv[0]元素(对应于存储单元P3)
+* *的rowid行删除。如果argv[0]是NULL,那么没有
+* *删除发生。argv[1]rowid的新元素
+* *行。这可以为空表选择新的虚拟
+* * rowid。随后的数组中的元素
+* *新行中的列的值。
+**
+** If P2==1 then no insert is performed.  argv[0] is the rowid of
+** a row to delete.
+如果P2 = = 1然后不执行插入。argv[0]rowid
+* *删除一行。
+**
+** P1 is a boolean flag. If it is set to true and the xUpdate call
+** is successful, then the value returned by sqlite3_last_insert_rowid() 
+** is set to the value of the rowid for the row just inserted.
+P1是一个布尔标志。如果它被设置为true,xUpdate电话
+* *是成功,那么返回的值sqlite3_last_insert_rowid()
+* *的值被设置为rowid刚刚插入的行。
+*/
+
+case OP_VUpdate: {
+  sqlite3_vtab *pVtab;
+  sqlite3_module *pModule;
+  int nArg;
+  int i;
+  sqlite_int64 rowid;
+  Mem **apArg;
+  Mem *pX;
+
+  assert( pOp->p2==1        || pOp->p5==OE_Fail   || pOp->p5==OE_Rollback 
+       || pOp->p5==OE_Abort || pOp->p5==OE_Ignore || pOp->p5==OE_Replace
+  );
+  pVtab = pOp->p4.pVtab->pVtab;
+  pModule = (sqlite3_module *)pVtab->pModule;
+  nArg = pOp->p2;
+  assert( pOp->p4type==P4_VTAB );
+  if( ALWAYS(pModule->xUpdate) ){
+    u8 vtabOnConflict = db->vtabOnConflict;
+    apArg = p->apArg;
+    pX = &aMem[pOp->p3];
+    for(i=0; i<nArg; i++){
+      assert( memIsValid(pX) );
+      memAboutToChange(p, pX);
+      sqlite3VdbeMemStoreType(pX);
+      apArg[i] = pX;
+      pX++;
+    }
+    db->vtabOnConflict = pOp->p5;
+    rc = pModule->xUpdate(pVtab, nArg, apArg, &rowid);
+    db->vtabOnConflict = vtabOnConflict;
+    importVtabErrMsg(p, pVtab);
+    if( rc==SQLITE_OK && pOp->p1 ){
+      assert( nArg>1 && apArg[0] && (apArg[0]->flags&MEM_Null) );
+      db->lastRowid = lastRowid = rowid;
+    }
+    if( rc==SQLITE_CONSTRAINT && pOp->p4.pVtab->bConstraint ){
+      if( pOp->p5==OE_Ignore ){
+        rc = SQLITE_OK;
+      }else{
+        p->errorAction = ((pOp->p5==OE_Replace) ? OE_Abort : pOp->p5);
+      }
+    }else{
+      p->nChange++;
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
+/* Opcode: Pagecount P1 P2 * * *
+**
+** Write the current number of pages in database P1 to memory cell P2.
+*/
+case OP_Pagecount: {            /* out2-prerelease */
+  pOut->u.i = sqlite3BtreeLastPage(db->aDb[pOp->p1].pBt);
+  break;
+}
+#endif
+
+
+#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
+/* Opcode: MaxPgcnt P1 P2 P3 * *
+**
+** Try to set the maximum page count for database P1 to the value in P3.
+** Do not let the maximum page count fall below the current page count and
+** do not change the maximum page count value if P3==0.
+**
+** Store the maximum page count after the change in register P2.
+试图设置的最大页数数据库P1 P3的价值。
+* *不要让最大计数低于当前页面数和页面
+* *不改变的最大页数值如果P3 = = 0。
+* *
+* *店的最大页数后注册P2的变化。
+*/
+case OP_MaxPgcnt: {            /* out2-prerelease */
+  unsigned int newMax;
+  Btree *pBt;
+
+  pBt = db->aDb[pOp->p1].pBt;
+  newMax = 0;
+  if( pOp->p3 ){
+    newMax = sqlite3BtreeLastPage(pBt);
+    if( newMax < (unsigned)pOp->p3 ) newMax = (unsigned)pOp->p3;
+  }
+  pOut->u.i = sqlite3BtreeMaxPageCount(pBt, newMax);
+  break;
+}
+#endif
+
+
+#ifndef SQLITE_OMIT_TRACE
+/* Opcode: Trace * * * P4 *
+**
+** If tracing is enabled (by the sqlite3_trace()) interface, then
+** the UTF-8 string contained in P4 is emitted on the trace callback.
+如果启用了跟踪(通过sqlite3_trace())接口,然后
+* * utf - 8编码的字符串包含在P4上发出跟踪回调。
+*/
+case OP_Trace: {
+  char *zTrace;
+  char *z;
+
+  if( db->xTrace && (zTrace = (pOp->p4.z ? pOp->p4.z : p->zSql))!=0 ){
+    z = sqlite3VdbeExpandSql(p, zTrace);
+    db->xTrace(db->pTraceArg, z);
+    sqlite3DbFree(db, z);
+  }
+#ifdef SQLITE_DEBUG
+  if( (db->flags & SQLITE_SqlTrace)!=0
+   && (zTrace = (pOp->p4.z ? pOp->p4.z : p->zSql))!=0
+  ){
+    sqlite3DebugPrintf("SQL-trace: %s\n", zTrace);
+  }
+#endif /* SQLITE_DEBUG */
+  break;
+}
+#endif
+
+
+/* Opcode: Noop * * * * *
+**
+** Do nothing.  This instruction is often useful as a jump
+** destination.什么也不做。这个指令通常是有用的作为一个跳
+* *的目的地。
+*/
+/*
+** The magic Explain opcode are only inserted when explain==2 (which
+** is to say when the EXPLAIN QUERY PLAN syntax is used.)
+** This opcode records information from the optimizer.  It is the
+** the same as a no-op.  This opcodesnever appears in a real VM program.
+神奇的解释操作码时才插入解释= = 2(
+* *也就是说语法解释查询计划时使用)。
+从优化器* *这个操作码记录信息。这是
+* *无为法相同。这个opcodesnever出现在一个真实的虚拟机程序。
+*/
+default: {          /* This is really OP_Noop and OP_Explain */
+  assert( pOp->opcode==OP_Noop || pOp->opcode==OP_Explain );
+  break;
+}
+
+/*****************************************************************************
+** The cases of the switch statement above this line should all be indented
+** by 6 spaces.  But the left-most 6 spaces have been removed to improve the
+** readability.  From this point on down, the normal indentation rules are
+** restored.
+switch语句的情况下上面这一行,都应当缩进
+6 * *的空间。但最左边6提高空间已被移除
+* *可读性。从这个观点上看,正常的缩进规则
+* *恢复。
+*****************************************************************************/
+    }
+
+#ifdef VDBE_PROFILE
+    {
+      u64 elapsed = sqlite3Hwtime() - start;
+      pOp->cycles += elapsed;
+      pOp->cnt++;
+#if 0
+        fprintf(stdout, "%10llu ", elapsed);
+        sqlite3VdbePrintOp(stdout, origPc, &aOp[origPc]);
+#endif
+    }
+#endif
+
+    /* The following code adds nothing to the actual functionality
+    ** of the program.  It is only here for testing and debugging.
+    ** On the other hand, it does burn CPU cycles every time through
+    ** the evaluator loop.  So we can leave it out when NDEBUG is defined.
+	下面的代码还没有实际功能
+程序的* *。只有在测试和调试。
+* *在另一方面,它每次通过消耗CPU周期
+* *的求值程序循环。所以我们可以把它当NDEBUG定义。
+    */
+#ifndef NDEBUG
+    assert( pc>=-1 && pc<p->nOp );
+
+#ifdef SQLITE_DEBUG
+    if( p->trace ){
+      if( rc!=0 ) fprintf(p->trace,"rc=%d\n",rc);
+      if( pOp->opflags & (OPFLG_OUT2_PRERELEASE|OPFLG_OUT2) ){
+        registerTrace(p->trace, pOp->p2, &aMem[pOp->p2]);
+      }
+      if( pOp->opflags & OPFLG_OUT3 ){
+        registerTrace(p->trace, pOp->p3, &aMem[pOp->p3]);
+      }
+    }
+#endif  /* SQLITE_DEBUG */
+#endif  /* NDEBUG */
+  }  /* The end of the for(;;) loop the loops through opcodes */
+
+  /* If we reach this point, it means that execution is finished with
+  ** an error of some kind.如果我们做到这一点,这意味着执行完成
+* *一个错误。
+  */
+vdbe_error_halt:
+  assert( rc );
+  p->rc = rc;
+  testcase( sqlite3GlobalConfig.xLog!=0 );
+  sqlite3_log(rc, "statement aborts at %d: [%s] %s", 
+                   pc, p->zSql, p->zErrMsg);
+  sqlite3VdbeHalt(p);
+  if( rc==SQLITE_IOERR_NOMEM ) db->mallocFailed = 1;
+  rc = SQLITE_ERROR;
+  if( resetSchemaOnFault>0 ){
+    sqlite3ResetOneSchema(db, resetSchemaOnFault-1);
+  }
+
+  /* This is the only way out of this procedure.  We have to
+  ** release the mutexes on btrees that were acquired at the
+  ** top.这是这个过程的唯一出路。我们必须
+* *释放互斥锁来获得的
+* *。
+  */
+vdbe_return:
+  db->lastRowid = lastRowid;
+  sqlite3VdbeLeave(p);
+  return rc;
+
+  /* Jump to here if a string or blob larger than SQLITE_MAX_LENGTH
+  ** is encountered.跳转到这里如果一个字符串或blob大于SQLITE_MAX_LENGTH
+遇到* *。
+  */
+too_big:
+  sqlite3SetString(&p->zErrMsg, db, "string or blob too big");
+  rc = SQLITE_TOOBIG;
+  goto vdbe_error_halt;
+
+  /* Jump to here if a malloc() fails.
+  */
+no_mem:
+  db->mallocFailed = 1;
+  sqlite3SetString(&p->zErrMsg, db, "out of memory");
+  rc = SQLITE_NOMEM;
+  goto vdbe_error_halt;
+
+  /* Jump to here for any other kind of fatal error.  The "rc" variable
+  ** should hold the error number.在这里跳转到其它类型的致命错误。“钢筋混凝土”变量
+* *应持有错误的号码。
+  */
+abort_due_to_error:
+  assert( p->zErrMsg==0 );
+  if( db->mallocFailed ) rc = SQLITE_NOMEM;
+  if( rc!=SQLITE_IOERR_NOMEM ){
+    sqlite3SetString(&p->zErrMsg, db, "%s", sqlite3ErrStr(rc));
+  }
+  goto vdbe_error_halt;
+
+  /* Jump to here if the sqlite3_interrupt() API sets the interrupt
+  ** flag.跳转到这里如果sqlite3_interrupt()API设置中断
+* *旗帜。
+  */
+abort_due_to_interrupt:
+  assert( db->u1.isInterrupted );
+  rc = SQLITE_INTERRUPT;
+  p->rc = rc;
+  sqlite3SetString(&p->zErrMsg, db, "%s", sqlite3ErrStr(rc));
+  goto vdbe_error_halt;
+}
+
+  if( eNew==PAGER_JOURNALMODE_WAL
+   && (sqlite3Strlen30(zFilename)==0           /* Temp file */
+       || !sqlite3PagerWalSupported(pPager))   /* No shared-memory support */
+  ){
+    eNew = eOld;
+  }
+
+  if( (eNew!=eOld)
+   && (eOld==PAGER_JOURNALMODE_WAL || eNew==PAGER_JOURNALMODE_WAL)
+  ){
+    if( !db->autoCommit || db->activeVdbeCnt>1 ){
+      rc = SQLITE_ERROR;
+      sqlite3SetString(&p->zErrMsg, db, 
+          "cannot change %s wal mode from within a transaction",
+          (eNew==PAGER_JOURNALMODE_WAL ? "into" : "out of")
+      );
+      break;
+    }else{
+ 
+      if( eOld==PAGER_JOURNALMODE_WAL ){
+        /* If leaving WAL mode, close the log file. If successful, the call
+        ** to PagerCloseWal() checkpoints and deletes the write-ahead-log 
+        ** file. An EXCLUSIVE lock may still be held on the database file 
+        ** after a successful return. 
+		如果离开WAL模式,关闭日志文件。如果成功,调用
+* * PagerCloseWal()write-ahead-log检查点和删除
+* *文件。独占锁可能仍在数据库文件中
+* *成功后返回。
+        */
+        rc = sqlite3PagerCloseWal(pPager);
+        if( rc==SQLITE_OK ){
+          sqlite3PagerSetJournalMode(pPager, eNew);
+        }
+      }else if( eOld==PAGER_JOURNALMODE_MEMORY ){
+        /* Cannot transition directly from MEMORY to WAL.  Use mode OFF
+        ** as an intermediate
+		不能直接从Memory模式过渡到WAL模式。使用模式OFF
+* *作为中间
+		*/
+        sqlite3PagerSetJournalMode(pPager, PAGER_JOURNALMODE_OFF);
+      }
+  
+      /* Open a transaction on the database file. Regardless of the journal
+      ** mode, this transaction always uses a rollback journal.
+	  打开事务在数据库文件。无论日志模式,这个事务总是使用一个回滚日志。
+      */
+      assert( sqlite3BtreeIsInTrans(pBt)==0 );
+      if( rc==SQLITE_OK ){
+        rc = sqlite3BtreeSetVersion(pBt, (eNew==PAGER_JOURNALMODE_WAL ? 2 : 1));
+      }
+    }
+  }
+#endif /* ifndef SQLITE_OMIT_WAL */
+
+  if( rc ){
+    eNew = eOld;
+  }
+  eNew = sqlite3PagerSetJournalMode(pPager, eNew);
+
+  pOut = &aMem[pOp->p2];
+  pOut->flags = MEM_Str|MEM_Static|MEM_Term;
+  pOut->z = (char *)sqlite3JournalModename(eNew);
+  pOut->n = sqlite3Strlen30(pOut->z);
+  pOut->enc = SQLITE_UTF8;
+  sqlite3VdbeChangeEncoding(pOut, encoding);
+  break;
+};
+#endif /* SQLITE_OMIT_PRAGMA */
+
+#if !defined(SQLITE_OMIT_VACUUM) && !defined(SQLITE_OMIT_ATTACH)
+/* Opcode: Vacuum * * * * *
+**
+** Vacuum the entire database.  This opcode will cause other virtual
+** machines to be created and run.  It may not be called from within
+** a transaction.
+真空整个数据库。这个操作码会导致其他虚拟机器创建和运行。它可能不是从内部一个事务。
+*/
+case OP_Vacuum: {
+  rc = sqlite3RunVacuum(&p->zErrMsg, db);
+  break;
+}
+#endif
+
+#if !defined(SQLITE_OMIT_AUTOVACUUM)
+/* Opcode: IncrVacuum P1 P2 * * *
+**
+** Perform a single step of the incremental vacuum procedure on
+** the P1 database. If the vacuum has finished, jump to instruction
+** P2. Otherwise, fall through to the next instruction.
+执行增量真空过程的一个步骤P1数据库。如果真空完成后,跳转到指令 P2。否则,下降到下一个指令。
+*/
+case OP_IncrVacuum: {        /* jump */
+  Btree *pBt;
+
+  assert( pOp->p1>=0 && pOp->p1<db->nDb );
+  assert( (p->btreeMask & (((yDbMask)1)<<pOp->p1))!=0 );
+  pBt = db->aDb[pOp->p1].pBt;
+  rc = sqlite3BtreeIncrVacuum(pBt);
+  if( rc==SQLITE_DONE ){
+    pc = pOp->p2 - 1;
+    rc = SQLITE_OK;
+  }
+  break;
+}
+#endif
+
+/* Opcode: Expire P1 * * * *
+**
+** Cause precompiled statements to become expired. An expired statement
+** fails with an error code of SQLITE_SCHEMA if it is ever executed 
+** (via sqlite3_step()).
+导致预编译语句变得过期了。一个过期的语句
+* *失败的错误代码SQLITE_SCHEMA如果它执行
+* *(通过sqlite3_step())。
+
+** 
+** If P1 is 0, then all SQL statements become expired. If P1 is non-zero,
+** then only the currently executing statement is affected. 
+如果P1为0,那么所有SQL语句变得过期。如果非零P1,
+* *然后只影响当前执行语句。
+
+*/
+case OP_Expire: {
+  if( !pOp->p1 ){
+    sqlite3ExpirePreparedStatements(db);
+  }else{
+    p->expired = 1;
+  }
+  break;
+}
+
+#ifndef SQLITE_OMIT_SHARED_CACHE
+/* Opcode: TableLock P1 P2 P3 P4 *
+**
+** Obtain a lock on a particular table. This instruction is only used when
+** the shared-cache feature is enabled. 
+**获得一个锁在一个特定的表。这个指令时才使用
+* *启用共享缓存特性。
+
+** P1 is the index of the database in sqlite3.aDb[] of the database
+** on which the lock is acquired.  A readlock is obtained if P3==0 or
+** a write lock if P3==1.
+**P1的索引数据库sqlite3。亚洲开发银行数据库的[]
+加了锁的* *。一个readlock如果P3 = = 0或获得
+* *一个写锁如果P3 = = 1。
+
+** P2 contains the root-page of the table to lock.
+P2包含锁表的根页。
+**
+** P4 contains a pointer to the name of the table being locked. This is only
+** used to generate an error message if the lock cannot be obtained.
+* * P4包含一个指针表被锁的名称。这只是
+* *用于生成一个错误消息,如果不能获得锁。
+*/
+case OP_TableLock: {
+  u8 isWriteLock = (u8)pOp->p3;
+  if( isWriteLock || 0==(db->flags&SQLITE_ReadUncommitted) ){
+    int p1 = pOp->p1; 
+    assert( p1>=0 && p1<db->nDb );
+    assert( (p->btreeMask & (((yDbMask)1)<<p1))!=0 );
+    assert( isWriteLock==0 || isWriteLock==1 );
+    rc = sqlite3BtreeLockTable(db->aDb[p1].pBt, pOp->p2, isWriteLock);
+    if( (rc&0xFF)==SQLITE_LOCKED ){
+      const char *z = pOp->p4.z;
+      sqlite3SetString(&p->zErrMsg, db, "database table is locked: %s", z);
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_SHARED_CACHE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VBegin * * * P4 *
+**
+** P4 may be a pointer to an sqlite3_vtab structure. If so, call the 
+** xBegin method for that table.
+**
+** Also, whether or not P4 is set, check that this is not being called from
+** within a callback to a virtual table xSync() method. If it is, the error
+** code will be set to SQLITE_LOCKED.
+寄存器P4对 sqlite3_vtab结构可能是一个指针。 如果是这样,对那张表调用xBegin方法。
+* *
+* *另外,P4是否设置,检查这不是被称为
+* *在一个回调到一个虚拟表xSync()方法。如果是,这个错误
+代码将被设置为SQLITE_LOCKED * *。
+*/
+case OP_VBegin: {
+  VTable *pVTab;
+  pVTab = pOp->p4.pVtab;
+  rc = sqlite3VtabBegin(db, pVTab);
+  if( pVTab ) importVtabErrMsg(p, pVTab->pVtab);
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VCreate P1 * * P4 *
+**
+** P4 is the name of a virtual table in database P1. Call the xCreate method
+** for that table.P4的名称是一个虚拟表在数据库P1。调用xCreate方法表
+*/
+case OP_VCreate: {
+  rc = sqlite3VtabCallCreate(db, pOp->p1, pOp->p4.z, &p->zErrMsg);
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VDestroy P1 * * P4 *
+**
+** P4 is the name of a virtual table in database P1.  Call the xDestroy method
+** of that table.
+    P4是在数据库P1中的一个虚拟表的名字。调用那个表的xDestroy方法
+*/
+case OP_VDestroy: {
+  p->inVtabMethod = 2;
+  rc = sqlite3VtabCallDestroy(db, pOp->p1, pOp->p4.z);
+  p->inVtabMethod = 0;
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VOpen P1 * * P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** P1 is a cursor number.  This opcode opens a cursor to the virtual
+** table and stores that cursor in P1.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* * P1是游标的数字。这个操作码打开虚拟光标
+* *表和商店,光标在P1。
+*/
+case OP_VOpen: {
+  VdbeCursor *pCur;
+  sqlite3_vtab_cursor *pVtabCursor;
+  sqlite3_vtab *pVtab;
+  sqlite3_module *pModule;
+
+  pCur = 0;
+  pVtabCursor = 0;
+  pVtab = pOp->p4.pVtab->pVtab;
+  pModule = (sqlite3_module *)pVtab->pModule;
+  assert(pVtab && pModule);
+  rc = pModule->xOpen(pVtab, &pVtabCursor);
+  importVtabErrMsg(p, pVtab);
+  if( SQLITE_OK==rc ){
+    /* Initialize sqlite3_vtab_cursor base class */
+    pVtabCursor->pVtab = pVtab;
+
+    /* Initialise vdbe cursor object */
+    pCur = allocateCursor(p, pOp->p1, 0, -1, 0);
+    if( pCur ){
+      pCur->pVtabCursor = pVtabCursor;
+      pCur->pModule = pVtabCursor->pVtab->pModule;
+    }else{
+      db->mallocFailed = 1;
+      pModule->xClose(pVtabCursor);
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VFilter P1 P2 P3 P4 *
+**
+** P1 is a cursor opened using VOpen.  P2 is an address to jump to if
+** the filtered result set is empty.
+**P1是使用VOpen打开游标。P2是跳转到一个地址
+* *过滤结果集是空的。
+
+** P4 is either NULL or a string that was generated by the xBestIndex
+** method of the module.  The interpretation of the P4 string is left
+** to the module implementation.
+P4 NULL或一个字符串,该字符串是由xBestIndex生成
+* *模块的方法。P4的解释字符串是离开了
+* *模块实现。
+**
+** This opcode invokes the xFilter method on the virtual table specified
+** by P1.  The integer query plan parameter to xFilter is stored in register
+** P3. Register P3+1 stores the argc parameter to be passed to the
+** xFilter method. Registers P3+2..P3+1+argc are the argc
+** additional parameters which are passed to
+** xFilter as argv. Register P3+2 becomes argv[0] when passed to xFilter.
+
+**这个操作码调用xFilter方法指定的虚拟表
+* * P1。整数xFilter查询计划参数存储在寄存器中
+* * P3。注册P3 + 1存储命令行参数个数参数被传递到
+* * xFilter方法。寄存器P3 + 2 . .命令行参数个数P3 + 1 +命令行参数个数
+* *额外的参数传递给
+* * xFilter argv。 注册P3 + 2时传递给xFilter成了argv[0]。
+* *
+
+** A jump is made to P2 if the result set after filtering would be empty.
+
+* *跳转了P2如果过滤后的结果集将是空的。
+*/
+case OP_VFilter: {   /* jump */
+  int nArg;
+  int iQuery;
+  const sqlite3_module *pModule;
+  Mem *pQuery;
+  Mem *pArgc;
+  sqlite3_vtab_cursor *pVtabCursor;
+  sqlite3_vtab *pVtab;
+  VdbeCursor *pCur;
+  int res;
+  int i;
+  Mem **apArg;
+
+  pQuery = &aMem[pOp->p3];
+  pArgc = &pQuery[1];
+  pCur = p->apCsr[pOp->p1];
+  assert( memIsValid(pQuery) );
+  REGISTER_TRACE(pOp->p3, pQuery);
+  assert( pCur->pVtabCursor );
+  pVtabCursor = pCur->pVtabCursor;
+  pVtab = pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+
+  /* Grab the index number and argc parameters */
+  assert( (pQuery->flags&MEM_Int)!=0 && pArgc->flags==MEM_Int );
+  nArg = (int)pArgc->u.i;
+  iQuery = (int)pQuery->u.i;
+
+  /* Invoke the xFilter method */
+  {
+    res = 0;
+    apArg = p->apArg;
+    for(i = 0; i<nArg; i++){
+      apArg[i] = &pArgc[i+1];
+      sqlite3VdbeMemStoreType(apArg[i]);
+    }
+
+    p->inVtabMethod = 1;
+    rc = pModule->xFilter(pVtabCursor, iQuery, pOp->p4.z, nArg, apArg);
+    p->inVtabMethod = 0;
+    importVtabErrMsg(p, pVtab);
+    if( rc==SQLITE_OK ){
+      res = pModule->xEof(pVtabCursor);
+    }
+
+    if( res ){
+      pc = pOp->p2 - 1;
+    }
+  }
+  pCur->nullRow = 0;
+
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VColumn P1 P2 P3 * *
+**
+** Store the value of the P2-th column of
+** the row of the virtual-table that the 
+** P1 cursor is pointing to into register P3.
+存储P2-th列的值
+* *的虚拟表的行
+* * P1游标指向到寄存器P3。
+*/
+case OP_VColumn: {
+  sqlite3_vtab *pVtab;
+  const sqlite3_module *pModule;
+  Mem *pDest;
+  sqlite3_context sContext;
+
+  VdbeCursor *pCur = p->apCsr[pOp->p1];
+  assert( pCur->pVtabCursor );
+  assert( pOp->p3>0 && pOp->p3<=p->nMem );
+  pDest = &aMem[pOp->p3];
+  memAboutToChange(p, pDest);
+  if( pCur->nullRow ){
+    sqlite3VdbeMemSetNull(pDest);
+    break;
+  }
+  pVtab = pCur->pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+  assert( pModule->xColumn );
+  memset(&sContext, 0, sizeof(sContext));
+
+  /* The output cell may already have a buffer allocated. Move
+  ** the current contents to sContext.s so in case the user-function 
+  ** can use the already allocated buffer instead of allocating a 
+  ** new one.
+  细胞可能已经分配一个缓冲的输出。移动
+* * sContext的当前内容。所以,以防用户函数
+* *可以使用已分配的缓冲区,而不是分配
+* *新的。
+  */
+  sqlite3VdbeMemMove(&sContext.s, pDest);
+  MemSetTypeFlag(&sContext.s, MEM_Null);
+
+  rc = pModule->xColumn(pCur->pVtabCursor, &sContext, pOp->p2);
+  importVtabErrMsg(p, pVtab);
+  if( sContext.isError ){
+    rc = sContext.isError;
+  }
+
+  /* Copy the result of the function to the P3 register. We
+  ** do this regardless of whether or not an error occurred to ensure any
+  ** dynamic allocation in sContext.s (a Mem struct) is  released.
+  函数的结果复制到P3登记。我们
+* *这样做无论是否发生错误,以确保任何
+* *在sContext动态分配。年代(Mem结构)。
+  */
+  sqlite3VdbeChangeEncoding(&sContext.s, encoding);
+  sqlite3VdbeMemMove(pDest, &sContext.s);
+  REGISTER_TRACE(pOp->p3, pDest);
+  UPDATE_MAX_BLOBSIZE(pDest);
+
+  if( sqlite3VdbeMemTooBig(pDest) ){
+    goto too_big;
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VNext P1 P2 * * *
+**
+** Advance virtual table P1 to the next row in its result set and
+** jump to instruction P2.  Or, if the virtual table has reached
+** the end of its result set, then fall through to the next instruction.
+推进虚拟表P1在结果集和下一行
+* *跳转指令P2。或者,如果已经达到虚拟表
+* *的结果集,然后下降到下一个指令。
+*/
+case OP_VNext: {   /* jump */
+  sqlite3_vtab *pVtab;
+  const sqlite3_module *pModule;
+  int res;
+  VdbeCursor *pCur;
+
+  res = 0;
+  pCur = p->apCsr[pOp->p1];
+  assert( pCur->pVtabCursor );
+  if( pCur->nullRow ){
+    break;
+  }
+  pVtab = pCur->pVtabCursor->pVtab;
+  pModule = pVtab->pModule;
+  assert( pModule->xNext );
+
+  /* Invoke the xNext() method of the module. There is no way for the
+  ** underlying implementation to return an error if one occurs during
+  ** xNext(). Instead, if an error occurs, true is returned (indicating that 
+  ** data is available) and the error code returned when xColumn or
+  ** some other method is next invoked on the save virtual table cursor.
+  模块的调用xNext()方法。没有办法的
+* *底层实现返回一个错误,如果期间出现
+* * xNext()。相反,如果真的发生错误,返回(表明
+* *数据可用),当xColumn或返回的错误代码
+* *下一个调用其他方法保存虚拟表游标。
+  */
+  p->inVtabMethod = 1;
+  rc = pModule->xNext(pCur->pVtabCursor);
+  p->inVtabMethod = 0;
+  importVtabErrMsg(p, pVtab);
+  if( rc==SQLITE_OK ){
+    res = pModule->xEof(pCur->pVtabCursor);
+  }
+
+  if( !res ){
+    /* If there is data, jump to P2 */
+    pc = pOp->p2 - 1;
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VRename P1 * * P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** This opcode invokes the corresponding xRename method. The value
+** in register P1 is passed as the zName argument to the xRename method.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* *此操作码调用相应的xRename方法。的价值
+* *在P1通过注册为xRename zName参数的方法。
+*/
+case OP_VRename: {
+  sqlite3_vtab *pVtab;
+  Mem *pName;
+
+  pVtab = pOp->p4.pVtab->pVtab;
+  pName = &aMem[pOp->p1];
+  assert( pVtab->pModule->xRename );
+  assert( memIsValid(pName) );
+  REGISTER_TRACE(pOp->p1, pName);
+  assert( pName->flags & MEM_Str );
+  testcase( pName->enc==SQLITE_UTF8 );
+  testcase( pName->enc==SQLITE_UTF16BE );
+  testcase( pName->enc==SQLITE_UTF16LE );
+  rc = sqlite3VdbeChangeEncoding(pName, SQLITE_UTF8);
+  if( rc==SQLITE_OK ){
+    rc = pVtab->pModule->xRename(pVtab, pName->z);
+    importVtabErrMsg(p, pVtab);
+    p->expired = 0;
+  }
+  break;
+}
+#endif
+
+#ifndef SQLITE_OMIT_VIRTUALTABLE
+/* Opcode: VUpdate P1 P2 P3 P4 *
+**
+** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
+** This opcode invokes the corresponding xUpdate method. P2 values
+** are contiguous memory cells starting at P3 to pass to the xUpdate 
+** invocation. The value in register (P3+P2-1) corresponds to the 
+** p2th element of the argv array passed to xUpdate.
+P4是一个虚表指针对象,一个sqlite3_vtab结构。
+* *此操作码调用相应的xUpdate方法。P2值
+* *是连续的记忆细胞从xUpdate P3通过
+* *调用。寄存器中的值(P3 + P2-1)对应
+* * p2th argv数组的元素传递给xUpdate。
+
+**
+** The xUpdate method will do a DELETE or an INSERT or both.
+** The argv[0] element (which corresponds to memory cell P3)
+** is the rowid of a row to delete.  If argv[0] is NULL then no 
+** deletion occurs.  The argv[1] element is the rowid of the new 
+** row.  This can be NULL to have the virtual table select the new 
+** rowid for itself.  The subsequent elements in the array are 
+** the values of columns in the new row.
+xUpdate方法将删除或插入或两者兼而有之。
+* * argv[0]元素(对应于存储单元P3)
+* *的rowid行删除。如果argv[0]是NULL,那么没有
+* *删除发生。argv[1]rowid的新元素
+* *行。这可以为空表选择新的虚拟
+* * rowid。随后的数组中的元素
+* *新行中的列的值。
+**
+** If P2==1 then no insert is performed.  argv[0] is the rowid of
+** a row to delete.
+如果P2 = = 1然后不执行插入。argv[0]rowid
+* *删除一行。
+**
+** P1 is a boolean flag. If it is set to true and the xUpdate call
+** is successful, then the value returned by sqlite3_last_insert_rowid() 
+** is set to the value of the rowid for the row just inserted.
+P1是一个布尔标志。如果它被设置为true,xUpdate电话
+* *是成功,那么返回的值sqlite3_last_insert_rowid()
+* *的值被设置为rowid刚刚插入的行。
+*/
+
+case OP_VUpdate: {
+  sqlite3_vtab *pVtab;
+  sqlite3_module *pModule;
+  int nArg;
+  int i;
+  sqlite_int64 rowid;
+  Mem **apArg;
+  Mem *pX;
+
+  assert( pOp->p2==1        || pOp->p5==OE_Fail   || pOp->p5==OE_Rollback 
+       || pOp->p5==OE_Abort || pOp->p5==OE_Ignore || pOp->p5==OE_Replace
+  );
+  pVtab = pOp->p4.pVtab->pVtab;
+  pModule = (sqlite3_module *)pVtab->pModule;
+  nArg = pOp->p2;
+  assert( pOp->p4type==P4_VTAB );
+  if( ALWAYS(pModule->xUpdate) ){
+    u8 vtabOnConflict = db->vtabOnConflict;
+    apArg = p->apArg;
+    pX = &aMem[pOp->p3];
+    for(i=0; i<nArg; i++){
+      assert( memIsValid(pX) );
+      memAboutToChange(p, pX);
+      sqlite3VdbeMemStoreType(pX);
+      apArg[i] = pX;
+      pX++;
+    }
+    db->vtabOnConflict = pOp->p5;
+    rc = pModule->xUpdate(pVtab, nArg, apArg, &rowid);
+    db->vtabOnConflict = vtabOnConflict;
+    importVtabErrMsg(p, pVtab);
+    if( rc==SQLITE_OK && pOp->p1 ){
+      assert( nArg>1 && apArg[0] && (apArg[0]->flags&MEM_Null) );
+      db->lastRowid = lastRowid = rowid;
+    }
+    if( rc==SQLITE_CONSTRAINT && pOp->p4.pVtab->bConstraint ){
+      if( pOp->p5==OE_Ignore ){
+        rc = SQLITE_OK;
+      }else{
+        p->errorAction = ((pOp->p5==OE_Replace) ? OE_Abort : pOp->p5);
+      }
+    }else{
+      p->nChange++;
+    }
+  }
+  break;
+}
+#endif /* SQLITE_OMIT_VIRTUALTABLE */
+
+#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
+/* Opcode: Pagecount P1 P2 * * *
+**
+** Write the current number of pages in database P1 to memory cell P2.
+*/
+case OP_Pagecount: {            /* out2-prerelease */
+  pOut->u.i = sqlite3BtreeLastPage(db->aDb[pOp->p1].pBt);
+  break;
+}
+#endif
+
+
+#ifndef  SQLITE_OMIT_PAGER_PRAGMAS
+/* Opcode: MaxPgcnt P1 P2 P3 * *
+**
+** Try to set the maximum page count for database P1 to the value in P3.
+** Do not let the maximum page count fall below the current page count and
+** do not change the maximum page count value if P3==0.
+**
+** Store the maximum page count after the change in register P2.
+试图设置的最大页数数据库P1 P3的价值。
+* *不要让最大计数低于当前页面数和页面
+* *不改变的最大页数值如果P3 = = 0。
+* *
+* *店的最大页数后注册P2的变化。
+*/
+case OP_MaxPgcnt: {            /* out2-prerelease */
+  unsigned int newMax;
+  Btree *pBt;
+
+  pBt = db->aDb[pOp->p1].pBt;
+  newMax = 0;
+  if( pOp->p3 ){
+    newMax = sqlite3BtreeLastPage(pBt);
+    if( newMax < (unsigned)pOp->p3 ) newMax = (unsigned)pOp->p3;
+  }
+  pOut->u.i = sqlite3BtreeMaxPageCount(pBt, newMax);
+  break;
+}
+#endif
+
+
+#ifndef SQLITE_OMIT_TRACE
+/* Opcode: Trace * * * P4 *
+**
+** If tracing is enabled (by the sqlite3_trace()) interface, then
+** the UTF-8 string contained in P4 is emitted on the trace callback.
+如果启用了跟踪(通过sqlite3_trace())接口,然后
+* * utf - 8编码的字符串包含在P4上发出跟踪回调。
+*/
+case OP_Trace: {
+  char *zTrace;
+  char *z;
+
+  if( db->xTrace && (zTrace = (pOp->p4.z ? pOp->p4.z : p->zSql))!=0 ){
+    z = sqlite3VdbeExpandSql(p, zTrace);
+    db->xTrace(db->pTraceArg, z);
+    sqlite3DbFree(db, z);
+  }
+#ifdef SQLITE_DEBUG
+  if( (db->flags & SQLITE_SqlTrace)!=0
+   && (zTrace = (pOp->p4.z ? pOp->p4.z : p->zSql))!=0
+  ){
+    sqlite3DebugPrintf("SQL-trace: %s\n", zTrace);
+  }
+#endif /* SQLITE_DEBUG */
+  break;
+}
+#endif
+
+
+/* Opcode: Noop * * * * *
+**
+** Do nothing.  This instruction is often useful as a jump
+** destination.什么也不做。这个指令通常是有用的作为一个跳
+* *的目的地。
+*/
+/*
+** The magic Explain opcode are only inserted when explain==2 (which
+** is to say when the EXPLAIN QUERY PLAN syntax is used.)
+** This opcode records information from the optimizer.  It is the
+** the same as a no-op.  This opcodesnever appears in a real VM program.
+神奇的解释操作码时才插入解释= = 2(
+* *也就是说语法解释查询计划时使用)。
+从优化器* *这个操作码记录信息。这是
+* *无为法相同。这个opcodesnever出现在一个真实的虚拟机程序。
+*/
+default: {          /* This is really OP_Noop and OP_Explain */
+  assert( pOp->opcode==OP_Noop || pOp->opcode==OP_Explain );
+  break;
+}
+
+/*****************************************************************************
+** The cases of the switch statement above this line should all be indented
+** by 6 spaces.  But the left-most 6 spaces have been removed to improve the
+** readability.  From this point on down, the normal indentation rules are
+** restored.
+switch语句的情况下上面这一行,都应当缩进
+6 * *的空间。但最左边6提高空间已被移除
+* *可读性。从这个观点上看,正常的缩进规则
+* *恢复。
+*****************************************************************************/
+    }
+
+#ifdef VDBE_PROFILE
+    {
+      u64 elapsed = sqlite3Hwtime() - start;
+      pOp->cycles += elapsed;
+      pOp->cnt++;
+#if 0
+        fprintf(stdout, "%10llu ", elapsed);
+        sqlite3VdbePrintOp(stdout, origPc, &aOp[origPc]);
+#endif
+    }
+#endif
+
+    /* The following code adds nothing to the actual functionality
+    ** of the program.  It is only here for testing and debugging.
+    ** On the other hand, it does burn CPU cycles every time through
+    ** the evaluator loop.  So we can leave it out when NDEBUG is defined.
+	下面的代码还没有实际功能
+程序的* *。只有在测试和调试。
+* *在另一方面,它每次通过消耗CPU周期
+* *的求值程序循环。所以我们可以把它当NDEBUG定义。
+    */
+#ifndef NDEBUG
+    assert( pc>=-1 && pc<p->nOp );
+
+#ifdef SQLITE_DEBUG
+    if( p->trace ){
+      if( rc!=0 ) fprintf(p->trace,"rc=%d\n",rc);
+      if( pOp->opflags & (OPFLG_OUT2_PRERELEASE|OPFLG_OUT2) ){
+        registerTrace(p->trace, pOp->p2, &aMem[pOp->p2]);
+      }
+      if( pOp->opflags & OPFLG_OUT3 ){
+        registerTrace(p->trace, pOp->p3, &aMem[pOp->p3]);
+      }
+    }
+#endif  /* SQLITE_DEBUG */
+#endif  /* NDEBUG */
+  }  /* The end of the for(;;) loop the loops through opcodes */
+
+  /* If we reach this point, it means that execution is finished with
+  ** an error of some kind.如果我们做到这一点,这意味着执行完成
+* *一个错误。
+  */
+vdbe_error_halt:
+  assert( rc );
+  p->rc = rc;
+  testcase( sqlite3GlobalConfig.xLog!=0 );
+  sqlite3_log(rc, "statement aborts at %d: [%s] %s", 
+                   pc, p->zSql, p->zErrMsg);
+  sqlite3VdbeHalt(p);
+  if( rc==SQLITE_IOERR_NOMEM ) db->mallocFailed = 1;
+  rc = SQLITE_ERROR;
+  if( resetSchemaOnFault>0 ){
+    sqlite3ResetOneSchema(db, resetSchemaOnFault-1);
+  }
+
+  /* This is the only way out of this procedure.  We have to
+  ** release the mutexes on btrees that were acquired at the
+  ** top.这是这个过程的唯一出路。我们必须
+* *释放互斥锁来获得的
+* *。
+  */
+vdbe_return:
+  db->lastRowid = lastRowid;
+  sqlite3VdbeLeave(p);
+  return rc;
+
+  /* Jump to here if a string or blob larger than SQLITE_MAX_LENGTH
+  ** is encountered.跳转到这里如果一个字符串或blob大于SQLITE_MAX_LENGTH
+遇到* *。
+  */
+too_big:
+  sqlite3SetString(&p->zErrMsg, db, "string or blob too big");
+  rc = SQLITE_TOOBIG;
+  goto vdbe_error_halt;
+
+  /* Jump to here if a malloc() fails.
+  */
+no_mem:
+  db->mallocFailed = 1;
+  sqlite3SetString(&p->zErrMsg, db, "out of memory");
+  rc = SQLITE_NOMEM;
+  goto vdbe_error_halt;
+
+  /* Jump to here for any other kind of fatal error.  The "rc" variable
+  ** should hold the error number.在这里跳转到其它类型的致命错误。“钢筋混凝土”变量
+* *应持有错误的号码。
+  */
+abort_due_to_error:
+  assert( p->zErrMsg==0 );
+  if( db->mallocFailed ) rc = SQLITE_NOMEM;
+  if( rc!=SQLITE_IOERR_NOMEM ){
+    sqlite3SetString(&p->zErrMsg, db, "%s", sqlite3ErrStr(rc));
+  }
+  goto vdbe_error_halt;
+
+  /* Jump to here if the sqlite3_interrupt() API sets the interrupt
+  ** flag.跳转到这里如果sqlite3_interrupt()API设置中断
+* *旗帜。
+  */
+abort_due_to_interrupt:
+  assert( db->u1.isInterrupted );
+  rc = SQLITE_INTERRUPT;
+  p->rc = rc;
+  sqlite3SetString(&p->zErrMsg, db, "%s", sqlite3ErrStr(rc));
+  goto vdbe_error_halt;
+}
+
   if( eNew==PAGER_JOURNALMODE_WAL
    && (sqlite3Strlen30(zFilename)==0           /* Temp file */
        || !sqlite3PagerWalSupported(pPager))   /* No shared-memory support */
