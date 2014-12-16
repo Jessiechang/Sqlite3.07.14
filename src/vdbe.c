@@ -4682,8 +4682,7 @@ case OP_IdxGE: {        /* jump */
   }
   break;
 }
-
-
+ Opcode: Destroy P1 P2 P3 * *
 **
 ** Delete an entire database table or index whose root page in the database
 ** file is given by P1.删除整个数据库表或在寄存器P1的数据库中文件的索引的根页。
@@ -4691,9 +4690,9 @@ case OP_IdxGE: {        /* jump */
 ** The table being destroyed is in the main database file if P3==0.  If
 ** P3==1 then the table to be clear is in the auxiliary database file
 ** that is used to store tables create using CREATE TEMPORARY TABLE.
-**如果P3 = = 0,主数据库文件中的表将被破坏。
-**如果P3 = = 1那么辅助数据库文件中的表将被清除，
-这是用于存储表创建使用创建临时表。
+** 如果P3 = = 0,主数据库文件中的表将被破坏。
+** 如果P3 = = 1那么辅助数据库文件中的表将被清除，
+** 这是用于存储表创建使用创建临时表。
 
  
 ** If AUTOVACUUM is enabled then it is possible that another root page
@@ -4757,17 +4756,20 @@ case OP_Destroy: {     /* out2-prerelease */
 ** Delete all contents of the database table or index whose root page
 ** in the database file is given by P1.  But, unlike Destroy, do not
 ** remove the table or index from the database file.
-**删除所有数据库表的内容或寄存器P1的数据库中文件的索引的根页。但是,与破坏,不要从数据库中删除表或索引文件。
+** 删除所有数据库表的内容或寄存器P1的数据库中文件的索引的根页。但是,不像是
+破坏,不要从数据库中删除表或索引文件
 
 ** The table being clear is in the main database file if P2==0.  If
 ** P2==1 then the table to be clear is in the auxiliary database file
 ** that is used to store tables create using CREATE TEMPORARY TABLE.
-**明确的表是在主数据库文件如果P2 = = 0。如果P2 = = 1那么表必须清楚的是在辅助数据库文件这是用于存储表创建使用创建临时表。
+**明确的是在主数据库文件的表如果P2 = = 0。如果P2 = = 1那么表必须清楚的是
+在辅助数据库文件这是用于存储表创建使用创建临时表。
 
 ** If the P3 value is non-zero, then the table referred to must be an
 ** intkey table (an SQL table, not an index). In this case the row change 
 ** count is incremented by the number of rows in the table being cleared. 
-如果P3值为非0,那么表必须是一个引用intkey表(SQL表,而不是一个索引)。在这种情况下,行修改数增加的行数的表被清除。
+如果P3值为非0,那么表必须是一个引用intkey表(SQL表,而不是一个索引)。在这种情况下,
+行修改数增加的行数的表就会被清除。
 
 ** If P3 is greater than zero, then the value stored in register P3 is
 ** also incremented by the number of rows in the table being cleared.
@@ -4801,7 +4803,8 @@ case OP_Clear: {
 ** P1>1.  Write the root page number of the new table into
 ** register P2
 
-分配一个新表在主数据库文件如果P1 = = 0或辅助数据库文件如果P1 = = 1或者附加数据库中P1 > 1。把新表的根页号写入寄存器P2
+分配一个新表在主数据库文件如果P1 = = 0或辅助数据库文件如果P1 = = 1或者附加数据库中P1 > 1。
+把新表的根页号写入寄存器P2
 **
 ** The difference between a table and an index is this:  A table must
 ** have a 4-byte integer key and can have arbitrary data.  An index
@@ -4925,7 +4928,8 @@ case OP_LoadAnalysis: {
 ** the table named P4 in database P1.  This is called after a table
 ** is dropped in order to keep the internal representation of the
 ** schema consistent with what is on disk.
-拆卸内部的描述数据库P1的P4表的数据结构(内存)。这就是以降序的索引命名，是为了保持内部表示的模式与什么是磁盘上的一致。
+拆卸内部的描述数据库P1的P4表的数据结构(内存)。这就是以降序的索引命名，
+是为了保持内部表示的模式与什么是磁盘上的一致。
 */
 case OP_DropTable: {
   sqlite3UnlinkAndDeleteTable(db, pOp->p1, pOp->p4.z);
@@ -4938,7 +4942,8 @@ case OP_DropTable: {
 ** the index named P4 in database P1.  This is called after an index
 ** is dropped in order to keep the internal representation of the
 ** schema consistent with what is on disk.
-拆卸内部的描述数据库P1的指数P4的数据结构(内存)。这就是以降序的索引命名，是为了保持内部表示的模式与什么是磁盘上的一致。
+拆卸内部的描述数据库P1的指数P4的数据结构(内存)。这就是以降序的索引命名，
+是为了保持内部表示的模式与什么是磁盘上的一致。
 */
 case OP_DropIndex: {
   sqlite3UnlinkAndDeleteIndex(db, pOp->p1, pOp->p4.z);
@@ -4951,7 +4956,8 @@ case OP_DropIndex: {
 ** the trigger named P4 in database P1.  This is called after a trigger
 ** is dropped in order to keep the internal representation of the
 ** schema consistent with what is on disk.
-拆卸内部的描述数据库P1的P4触发器的数据结构(内存)。这就是以降序的索引命名，是为了保持内部表示的模式与什么是磁盘上的一致。
+拆卸内部的描述数据库P1的P4触发器的数据结构(内存)。这就是以降序的索引命名，
+是为了保持内部表示的模式与什么是磁盘上的一致。
 
 */
 case OP_DropTrigger: {
@@ -5056,7 +5062,8 @@ case OP_RowSetAdd: {       /* in1, in2 */
 ** Extract the smallest value from boolean index P1 and put that value into
 ** register P3.  Or, if boolean index P1 is initially empty, leave P3
 ** unchanged and jump to instruction P2.
-从布尔指数P1里提取出最小值,把该值放进寄存器P3。或者,如果布尔指数P1最初是空的,离开P3不变然后跳转到指令P2。
+从布尔指数P1里提取出最小值,把该值放进寄存器P3。或者,如果布尔指数P1最初是空的,
+离开P3不变然后跳转到指令P2。
 */
 case OP_RowSetRead: {       /* jump, in1, out3 */
   i64 val;
@@ -5121,12 +5128,11 @@ case OP_RowSetTest: {                     /* jump, in1, in3 */
 
   /* If there is anything other than a rowset object in memory cell P1,
   ** delete it now and initialize P1 with an empty rowset
-  如果有任何东西除了rowset对象在内存中细胞P1,
-删除它现在P1和初始化一个空行集
+  如果有除了rowset对象的其他东西在内存单元中P1,删除它现在P1和初始化一个空行集
   */
   if( (pIn1->flags & MEM_RowSet)==0 ){
     sqlite3VdbeMemSetRowSet(pIn1);
-    if( (pIn1->flags & MEM_RowSet)==0 ) goto no_mem;
+    if( (pIn1->flags & MEM_RowSet)==0 ) go   to no_mem;
   }
 
   assert( pOp->p4type==P4_INT32 );
@@ -5191,7 +5197,7 @@ case OP_Program: {        /* jump */
   ** is really a trigger, not a foreign key action, and the flag set
   ** and cleared by the "PRAGMA recursive_triggers" command is clear).
   **如果p5标志是明确的,那么递归调用触发器
-* *禁用向后兼容(p5设置如果这个子程序
+* * 禁用向后兼容(p5设置如果这个子程序
 * *真是一个触发器,没有外键操作,标记集
 * *,通过“杂注recursive_triggers”命令是显而易见的)。 
 
@@ -5234,7 +5240,7 @@ case OP_Program: {        /* jump */
     ** program stored in SubProgram.aOp. As well as these, one memory
     ** cell is required for each cursor used by the program. Set local
     ** variable nMem (and later, VdbeFrame.nChildMem) to this value.
-	子程序。nMem被设置为使用的记忆细胞的数量
+	子程序.nMem被设置为使用的记忆细胞的数量
 * *项目存储在SubProgram.aOp。 除了这些,一段记忆
 * *细胞需要每个游标使用的程序。设置本地
 * *变量nMem(后来,VdbeFrame.nChildMem)这个值。
@@ -5388,13 +5394,11 @@ case OP_FkIfZero: {         /* jump */
 **
 ** This instruction throws an error if the memory cell is not initially
 ** an integer.
-根肋骨的P1是一个注册这个VM(根肋骨
-* *不同于当前帧是否正在执行该指令
-* *在子程序)。设置注册P1的最大的价值
-* *其当前值和寄存器中的值P2。
-* *
-* *该指令将抛出一个错误如果没有最初记忆细胞
-* *一个整数。
+P1是ＶＭ的根框架里的一个寄存器(根框架
+* *不同于当前的框架如果该指令和子程序正在执行。
+* *设置寄存器P1的值到当前值的最大值和寄存器P2的值。
+*　
+* *该指令将抛出一个错误如果存储单元没有初始化为整数。
 */
 case OP_MemMax: {        /* in2 */
   Mem *pIn1;
@@ -5419,13 +5423,11 @@ case OP_MemMax: {        /* in2 */
 /* Opcode: IfPos P1 P2 * * *
 **
 ** If the value of register P1 is 1 or greater, jump to P2.
-**
 ** It is illegal to use this instruction on a register that does
 ** not contain an integer.  An assertion fault will result if you try.
-如果寄存器的值P1是1或更高,跳到P2。
-* *
-* *是违法使用这个指令寄存器,它
-* *不包含一个整数。断言故障会如果你试一试。
+如果寄存器P1的值是1或更高,跳到P2。
+** 在寄存器上使用这个指令是违法的,寄存器不包含一个整数。
+如果试一下，我敢断言会出故障。
 */
 case OP_IfPos: {        /* jump, in1 */
   pIn1 = &aMem[pOp->p1];
@@ -5444,8 +5446,8 @@ case OP_IfPos: {        /* jump, in1 */
 ** not contain an integer.  An assertion fault will result if you try.
 如果寄存器的值P1小于零,跳到P2。
 * *
-* *是违法使用这个指令寄存器,它
-* *不包含一个整数。断言故障会如果你试一试。
+*在寄存器上使用这个指令是违法的,寄存器不包含一个整数。
+如果试一下，我敢断言结果会出故障。
 */
 case OP_IfNeg: {        /* jump, in1 */
   pIn1 = &aMem[pOp->p1];
@@ -5463,11 +5465,11 @@ case OP_IfNeg: {        /* jump, in1 */
 **
 ** It is illegal to use this instruction on a register that does
 ** not contain an integer.  An assertion fault will result if you try.
-寄存器P1必须包含一个整数。添加文字P3
-* *价值登记P1。如果结果是0,跳到P2。
+寄存器P1必须包含一个整数。添加文字P3到
+* *寄存器P1上。如果结果是0,跳到P2。
 * *
-* *是违法使用这个指令寄存器,它
-* *不包含一个整数。断言故障会如果你试一试。
+* *在寄存器上使用这个指令是违法的,寄存器不包含一个整数。
+* *如果试一下，我敢断言结果会出故障。
 */
 case OP_IfZero: {        /* jump, in1 */
   pIn1 = &aMem[pOp->p1];
@@ -5488,13 +5490,11 @@ case OP_IfZero: {        /* jump, in1 */
 **
 ** The P5 arguments are taken from register P2 and its
 ** successors.
-一个聚合函数执行步骤。的
-* *函数P5参数。P4 FuncDef是一个指针
-* *结构,指定的函数。使用注册
-* * P3蓄电池。
+对一个聚合函数执行步骤。
+* *这个函数有P5参数。P4 是一个指向FuncDef结构的指针，
+* *这个结构有指定的函数。把寄存器P3作为累加器使用。
 * *
-* * P5参数从P2和登记
-* *的继任者。
+* * P5参数来自于寄存器P2同时也是它的继承者。
 */
 case OP_AggStep: {
   int n;
@@ -5560,15 +5560,15 @@ case OP_AggStep: {
 ** functions that can take varying numbers of arguments.  The
 ** P4 argument is only needed for the degenerate case where
 ** the step function was not previously called.
-执行终结器一个聚合函数。P1是
-* *的内存位置聚合的蓄电池。
+对聚合函数执行finalizer函数。P1是
+* *的内存位置对于这个聚合函数的的累加器。
 * *
-* * P2是阶跃函数需要的参数和数量
-* * P4 FuncDef这个函数指针。P2
-* *的论点是不习惯操作码。只有消除歧义
-* *函数可以有不同数量的参数。的
-* * P4的论点只是所需的退化情况
-* *阶梯函数不是之前调用。
+* * P2是阶跃函数需要的参数的数量。
+* * P4是指向 FuncDef这个函数的指针。P2
+* *参数不能用于这个操作码。只有消除歧义
+* *函数可以有不同数量的参数。
+* *当阶梯函数没有被先前调用 ，这个情况时，P4的参数才被需要使用。
+* *
 */
 case OP_AggFinal: {
   Mem *pMem;
@@ -5598,13 +5598,13 @@ case OP_AggFinal: {
 ** in the WAL that have been checkpointed after the checkpoint
 ** completes into mem[P3+2].  However on an error, mem[P3+1] and
 ** mem[P3+2] are initialized to -1.
-数据库检查点P1。这是一个空操作如果不目前在P1
+数据库检查点P1。这是一个空操作如果目前P1不是
 * * WAL模式。参数P2是SQLITE_CHECKPOINT_PASSIVE之一,满了
-* *或重启。1或0写入mem(P3)如果检查站返回
-* * SQLITE_BUSY与否,分别。写的页面数量
-* * WAL检查点之后的mem(P3 + 1)和页面的数量
-* *后的WAL设置检查点的检查站
-* *完成mem(P3 + 2)。然而在一个错误,mem(P3 + 1)
+* *或重启。1或0写入mem(P3)如果检查站分别返回
+* * SQLITE_BUSY或者空。把页面数量写到WAL中
+* * 在检查点之后的mem(P3 + 1)和WAL中的页面的数量
+* *设置检查点的检查站
+* *完成mem(P3 + 2)。然而会有一个错误,mem(P3 + 1)
 * * mem(P3 + 2)初始化为1。
 */
 case OP_Checkpoint: {
@@ -5641,14 +5641,14 @@ case OP_Checkpoint: {
 ** If changing into or out of WAL mode the procedure is more complicated.
 **
 ** Write a string containing the final journal-mode to register P2.
-改变数据库的日志模式P1 P3。必须的一个P3
-* * PAGER_JOURNALMODE_XXX值。 如果改变之间的各种各样的回滚
-* *模式(删除、截断、持续和内存),这是一个简单的
+把数据库P1的日志模式改变为P3。P3必须是
+* * PAGER_JOURNALMODE_XXX中的一个值。 如果各种的回滚模式之间发生改变
+* *(删除、截断、持续和内存),这是一个简单的
 * *操作。不需要IO。
 * *
 * *如果换上或WAL模式过程更为复杂。
 * *
-* *写一个字符串包含最后journal方式注册P2。
+* *写一个字符串包含最后journal方式寄存器P2。
 */
 case OP_JournalMode: {    /* out2-prerelease */
   Btree *pBt;                     /* Btree to change journal mode of */
@@ -5707,9 +5707,9 @@ case OP_JournalMode: {    /* out2-prerelease */
         ** file. An EXCLUSIVE lock may still be held on the database file 
         ** after a successful return. 
 		如果离开WAL模式,关闭日志文件。如果成功,调用
-* * PagerCloseWal()write-ahead-log检查点和删除
-* *文件。独占锁可能仍在数据库文件中
-* *成功后返回。
+* * PagerCloseWal()write-ahead-log检查点和删除write-ahead-log
+* *文件。在成功返值后，独占锁可能仍在数据库文件中。
+* *。
         */
         rc = sqlite3PagerCloseWal(pPager);
         if( rc==SQLITE_OK ){
@@ -5757,7 +5757,7 @@ case OP_JournalMode: {    /* out2-prerelease */
 ** Vacuum the entire database.  This opcode will cause other virtual
 ** machines to be created and run.  It may not be called from within
 ** a transaction.
-真空整个数据库。这个操作码会导致其他虚拟机器创建和运行。它可能不是从内部一个事务。
+清除整个数据库。这个操作码会导致其他虚拟机器创建和运行。它可能不是从内部一个事务。
 */
 case OP_Vacuum: {
   rc = sqlite3RunVacuum(&p->zErrMsg, db);
@@ -5824,8 +5824,7 @@ case OP_Expire: {
 ** P1 is the index of the database in sqlite3.aDb[] of the database
 ** on which the lock is acquired.  A readlock is obtained if P3==0 or
 ** a write lock if P3==1.
-**P1的索引数据库sqlite3。亚洲开发银行数据库的[]
-加了锁的* *。一个readlock如果P3 = = 0或获得
+**P1的索引数据库sqlite3。一个readlock如果P3 = = 0或获得
 * *一个写锁如果P3 = = 1。
 
 ** P2 contains the root-page of the table to lock.
@@ -5833,8 +5832,8 @@ P2包含锁表的根页。
 **
 ** P4 contains a pointer to the name of the table being locked. This is only
 ** used to generate an error message if the lock cannot be obtained.
-* * P4包含一个指针表被锁的名称。这只是
-* *用于生成一个错误消息,如果不能获得锁。
+* * P4包含一个指向表被锁的名称的指针。这只是
+* *用于如果不能获得锁，生成一个错误消息。
 */
 case OP_TableLock: {
   u8 isWriteLock = (u8)pOp->p3;
@@ -5910,9 +5909,9 @@ case OP_VDestroy: {
 ** P4 is a pointer to a virtual table object, an sqlite3_vtab structure.
 ** P1 is a cursor number.  This opcode opens a cursor to the virtual
 ** table and stores that cursor in P1.
-P4是一个虚表指针对象,一个sqlite3_vtab结构。
-* * P1是游标的数字。这个操作码打开虚拟光标
-* *表和商店,光标在P1。
+P4是一个指向虚表指针对象的指针,一个sqlite3_vtab结构。
+* * P1是光标的数字。这个操作码打开指向虚拟表和存储区的游标，
+* *,这个光标在P1。
 */
 case OP_VOpen: {
   VdbeCursor *pCur;
@@ -5950,15 +5949,15 @@ case OP_VOpen: {
 **
 ** P1 is a cursor opened using VOpen.  P2 is an address to jump to if
 ** the filtered result set is empty.
-**P1是使用VOpen打开游标。P2是跳转到一个地址
-* *过滤结果集是空的。
+**P1是使用VOpen打开的游标。当过滤结果集是空时，P2是可以跳转的一个地址。
+* *
 
 ** P4 is either NULL or a string that was generated by the xBestIndex
 ** method of the module.  The interpretation of the P4 string is left
 ** to the module implementation.
-P4 NULL或一个字符串,该字符串是由xBestIndex生成
-* *模块的方法。P4的解释字符串是离开了
-* *模块实现。
+P4是空或一个字符串,该字符串是由这个模块的xBestIndex方法生成。
+* *P4字符串的解释是实现这个模块。
+* *。
 **
 ** This opcode invokes the xFilter method on the virtual table specified
 ** by P1.  The integer query plan parameter to xFilter is stored in register
@@ -5967,17 +5966,17 @@ P4 NULL或一个字符串,该字符串是由xBestIndex生成
 ** additional parameters which are passed to
 ** xFilter as argv. Register P3+2 becomes argv[0] when passed to xFilter.
 
-**这个操作码调用xFilter方法指定的虚拟表
-* * P1。整数xFilter查询计划参数存储在寄存器中
-* * P3。注册P3 + 1存储命令行参数个数参数被传递到
+**这个操作码调用p1中虚拟表上的的xFilter方法
+* * xFilter方法中的查询计划参数存储在寄存器中
+* * P3。寄存器P3 + 1存储命令行参数个数参数被传递到
 * * xFilter方法。寄存器P3 + 2 . .命令行参数个数P3 + 1 +命令行参数个数
 * *额外的参数传递给
-* * xFilter argv。 注册P3 + 2时传递给xFilter成了argv[0]。
+* * xFilter argv。 寄存器P3 + 2时传递给xFilter成了argv[0]。
 * *
 
 ** A jump is made to P2 if the result set after filtering would be empty.
 
-* *跳转了P2如果过滤后的结果集将是空的。
+* *如果过滤后的结果集将是空的，则跳转了P2。
 */
 case OP_VFilter: {   /* jump */
   int nArg;
@@ -6065,10 +6064,10 @@ case OP_VColumn: {
   memset(&sContext, 0, sizeof(sContext));
 
   /* The output cell may already have a buffer allocated. Move
-  ** the current contents to sContext.s so in case the user-function 
+  ** the current contents to sContext.so in case the user-function 
   ** can use the already allocated buffer instead of allocating a 
   ** new one.
-  细胞可能已经分配一个缓冲的输出。移动
+  输出单元可能已经分配有一个缓冲。移动
 * * sContext的当前内容。所以,以防用户函数
 * *可以使用已分配的缓冲区,而不是分配
 * *新的。
@@ -6085,9 +6084,9 @@ case OP_VColumn: {
   /* Copy the result of the function to the P3 register. We
   ** do this regardless of whether or not an error occurred to ensure any
   ** dynamic allocation in sContext.s (a Mem struct) is  released.
-  函数的结果复制到P3登记。我们
+  函数的结果复制到P3寄存器。我们
 * *这样做无论是否发生错误,以确保任何
-* *在sContext动态分配。年代(Mem结构)。
+* *在sContext的动态分配被释放。(Mem结构)。
   */
   sqlite3VdbeChangeEncoding(&sContext.s, encoding);
   sqlite3VdbeMemMove(pDest, &sContext.s);
@@ -6132,9 +6131,9 @@ case OP_VNext: {   /* jump */
   ** xNext(). Instead, if an error occurs, true is returned (indicating that 
   ** data is available) and the error code returned when xColumn or
   ** some other method is next invoked on the save virtual table cursor.
-  模块的调用xNext()方法。没有办法的
-* *底层实现返回一个错误,如果期间出现
-* * xNext()。相反,如果真的发生错误,返回(表明
+  调用这个模块的xNext()方法。
+* *优先实现返回一个错误,如果在调用xNext()期间，出现一个错误。
+* *相反,如果真的发生错误,返回(表明
 * *数据可用),当xColumn或返回的错误代码
 * *下一个调用其他方法保存虚拟表游标。
   */
@@ -6162,7 +6161,7 @@ case OP_VNext: {   /* jump */
 ** in register P1 is passed as the zName argument to the xRename method.
 P4是一个虚表指针对象,一个sqlite3_vtab结构。
 * *此操作码调用相应的xRename方法。的价值
-* *在P1通过注册为xRename zName参数的方法。
+* *在寄存器P1的值通过xRename zName方法传递xRename zName参数。
 */
 case OP_VRename: {
   sqlite3_vtab *pVtab;
@@ -6197,7 +6196,7 @@ case OP_VRename: {
 ** p2th element of the argv array passed to xUpdate.
 P4是一个虚表指针对象,一个sqlite3_vtab结构。
 * *此操作码调用相应的xUpdate方法。P2值
-* *是连续的记忆细胞从xUpdate P3通过
+* *是连续的存储单元从xUpdate P3通过
 * *调用。寄存器中的值(P3 + P2-1)对应
 * * p2th argv数组的元素传递给xUpdate。
 
@@ -6361,10 +6360,10 @@ case OP_Trace: {
 ** is to say when the EXPLAIN QUERY PLAN syntax is used.)
 ** This opcode records information from the optimizer.  It is the
 ** the same as a no-op.  This opcodesnever appears in a real VM program.
-神奇的解释操作码时才插入解释= = 2(
+当explain= = 2，这个不可思议的explain操作码才被插入。(
 * *也就是说语法解释查询计划时使用)。
 从优化器* *这个操作码记录信息。这是
-* *无为法相同。这个opcodesnever出现在一个真实的虚拟机程序。
+* *和no-0p相同。这个opcodesnever出现在一个真实的虚拟机程序。
 */
 default: {          /* This is really OP_Noop and OP_Explain */
   assert( pOp->opcode==OP_Noop || pOp->opcode==OP_Explain );
@@ -6377,9 +6376,9 @@ default: {          /* This is really OP_Noop and OP_Explain */
 ** readability.  From this point on down, the normal indentation rules are
 ** restored.
 switch语句的情况下上面这一行,都应当缩进
-6 * *的空间。但最左边6提高空间已被移除
-* *可读性。从这个观点上看,正常的缩进规则
-* *恢复。
+6个空格。但为了提高可读性，最左边6的六个空格已被移除
+* *。从这个观点上看,正常的缩进规则
+* *恢复了正常。
 *****************************************************************************/
     }
 
@@ -6467,7 +6466,7 @@ no_mem:
   goto vdbe_error_halt;
 
   /* Jump to here for any other kind of fatal error.  The "rc" variable
-  ** should hold the error number.在这里跳转到其它类型的致命错误。“钢筋混凝土”变量
+  ** should hold the error number.在这里跳转到其它类型的致命错误。这个rc变量
 * *应持有错误的号码。
   */
 abort_due_to_error:
@@ -6479,13 +6478,5 @@ abort_due_to_error:
   goto vdbe_error_halt;
 
   /* Jump to here if the sqlite3_interrupt() API sets the interrupt
-  ** flag.跳转到这里如果sqlite3_interrupt()API设置中断
-* *旗帜。
-  */
-abort_due_to_interrupt:
-  assert( db->u1.isInterrupted );
-  rc = SQLITE_INTERRUPT;
-  p->rc = rc;
-  sqlite3SetString(&p->zErrMsg, db, "%s", sqlite3ErrStr(rc));
-  goto vdbe_error_halt;
-}
+  ** flag.如果sqlite3_interrupt()API设置中断标识则跳转到这里
+* *。
